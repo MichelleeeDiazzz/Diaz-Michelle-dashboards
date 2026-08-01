@@ -1,0 +1,339 @@
+---
+title: "W10-Dashboards Assignment"
+subtitle: "H&M Customer Profile & Sales Channel Dashboards"
+author: "Michelle Diaz"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-expand: true
+    embed-resources: true
+    theme: cosmo
+    code-fold: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Project 1: Static Customer Dashboard
+
+## Project Description
+
+This static dashboard profiles H&M's customer base using the customer records from the H&M Personalized Fashion Recommendations dataset (Kaggle). The goal is to give an audience a quick, clear picture of *who* H&M's customers are: their age, their club membership status, and how engaged they are with fashion news communications.
+
+The story the dashboard tells is that H&M has a **young-skewing, loyal, but selectively-engaged customer base**, which points to a clear marketing opportunity.
+
+
+## Data Description
+
+The customer dataset contains **1,371,980 customer records** with the following fields:
+
+- `customer_id` — unique (hashed) customer identifier
+- `FN` — fashion-news flag (1 = flagged, missing = not flagged)
+- `Active` — active-customer flag (1 = active, missing = not flagged)
+- `club_member_status` — ACTIVE, PRE-CREATE, or LEFT CLUB
+- `fashion_news_frequency` — None, Regularly, or Monthly
+- `age` — customer age (16 to 99; some values missing)
+- `postal_code` — hashed location
+
+For the dashboard, categorical labels were cleaned (for example, "None" and "NONE" were merged) and missing FN/Active flags were treated as "not flagged."
+
+## R Code
+
+The static dashboard was built as a separate Quarto file using `format: dashboard`. The code below is the full dashboard source.
+
+```r
+---
+title: "H&M Customer Profile Dashboard"
+author: "Michelle Diaz"
+date: today
+format:
+  dashboard:
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+​```{r}
+#| label: setup
+library(tidyverse)
+library(scales)
+
+customers <- read_csv("customers.csv")
+
+customers_clean <- customers |>
+  mutate(
+    FN = if_else(is.na(FN), 0, FN),
+    Active = if_else(is.na(Active), 0, Active),
+    fashion_news_frequency = case_when(
+      fashion_news_frequency %in% c("NONE", "None") ~ "None",
+      fashion_news_frequency == "Regularly" ~ "Regularly",
+      fashion_news_frequency == "Monthly" ~ "Monthly",
+      TRUE ~ "Unknown"
+    )
+  )
+
+total_customers <- nrow(customers_clean)
+median_age <- median(customers_clean$age, na.rm = TRUE)
+pct_active_member <- customers_clean |>
+  summarise(p = mean(club_member_status == "ACTIVE", na.rm = TRUE)) |>
+  pull(p)
+pct_fashion_news <- customers_clean |>
+  summarise(p = mean(fashion_news_frequency == "Regularly", na.rm = TRUE)) |>
+  pull(p)
+​```
+
+## Row {height="20%"}
+
+​```{r}
+#| content: valuebox
+#| title: "Total Customers"
+#| icon: people-fill
+#| color: primary
+list(value = comma(total_customers))
+​```
+
+​```{r}
+#| content: valuebox
+#| title: "Median Age"
+#| icon: person-badge
+#| color: info
+list(value = median_age)
+​```
+
+​```{r}
+#| content: valuebox
+#| title: "Active Club Members"
+#| icon: patch-check-fill
+#| color: success
+list(value = percent(pct_active_member, accuracy = 0.1))
+​```
+
+​```{r}
+#| content: valuebox
+#| title: "Engaged w/ Fashion News"
+#| icon: envelope-heart-fill
+#| color: warning
+list(value = percent(pct_fashion_news, accuracy = 0.1))
+​```
+
+## Row {height="80%"}
+
+### Column {width="60%"}
+
+​```{r}
+#| title: "Customer Age Distribution"
+customers_clean |>
+  filter(!is.na(age)) |>
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "#E50010", color = "white") +
+  scale_y_continuous(labels = comma) +
+  labs(x = "Age", y = "Number of Customers") +
+  theme_minimal(base_size = 14)
+​```
+
+### Column {width="40%"}
+
+​```{r}
+#| title: "Club Membership Status"
+customers_clean |>
+  filter(!is.na(club_member_status)) |>
+  count(club_member_status) |>
+  ggplot(aes(x = reorder(club_member_status, n), y = n)) +
+  geom_col(fill = "#E50010") +
+  coord_flip() +
+  scale_y_continuous(labels = comma) +
+  labs(x = NULL, y = "Customers") +
+  theme_minimal(base_size = 14)
+​```
+
+​```{r}
+#| title: "Fashion News Engagement"
+customers_clean |>
+  count(fashion_news_frequency) |>
+  ggplot(aes(x = reorder(fashion_news_frequency, n), y = n)) +
+  geom_col(fill = "#222222") +
+  coord_flip() +
+  scale_y_continuous(labels = comma) +
+  labs(x = NULL, y = "Customers") +
+  theme_minimal(base_size = 14)
+​```
+```
+
+## Findings from the Data
+
+- **Age:** The customer base skews young, with a median age of 32. Most customers fall between their mid-20s and late-40s.
+
+- **Membership:** The overwhelming majority of customers are ACTIVE club members, and very few have left the club, which signals strong retention and loyalty.
+
+- **Fashion news engagement:** Only about one-third of customers engage with fashion news "Regularly," while most receive none. 
+
+## Published URL
+
+*[TODO: Paste your clickable published dashboard URL here after publishing.]*
+
+[Static Customer Dashboard](ADD-YOUR-DASHBOARD-URL-HERE)
+
+# Project 2: Interactive Shiny App
+
+## Project Description
+
+This interactive Shiny application explores **how H&M's sales patterns differ between the online and in-store channels over time**. It is built around the group project's research question (RO3): does sales channel relate to spending patterns?
+
+The app lets the audience filter the data by date range, choose which metric to view (total sales, number of transactions, or average price), and toggle channels on or off, so they can explore the channel dynamics interactively rather than viewing a single fixed chart.
+
+>
+
+## Data Description
+
+The app is built on the H&M transactions dataset, which originally contained **31,788,324 transaction records** with these fields:
+
+- `t_dat` — transaction date
+- `customer_id` — hashed customer identifier
+- `article_id` — product identifier
+- `price` — transaction price
+- `sales_channel_id` — 1 or 2 (mapped to Online / In-Store)
+
+Because 31.8 million rows are far too large to load into a deployed Shiny app, the data was **pre-aggregated to daily totals by sales channel**, reducing it to **1,423 rows**. Each row holds one day's total sales, transaction count, and average price for one channel. This summarized file (`daily_summary.csv`) is what the app runs on.
+
+
+## R Code
+
+The data was first summarized from the full transactions file:
+
+```r
+library(tidyverse)
+
+transactions <- read_csv("transactions_train.csv")
+
+daily_summary <- transactions |>
+  mutate(channel = if_else(sales_channel_id == 1, "Online", "In-Store")) |>
+  group_by(t_dat, channel) |>
+  summarise(
+    total_sales = sum(price, na.rm = TRUE),
+    n_transactions = n(),
+    avg_price = mean(price, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+write_csv(daily_summary, "daily_summary.csv")
+```
+
+The Shiny application code (`app.R`):
+
+```r
+library(shiny)
+library(tidyverse)
+library(scales)
+
+daily <- read_csv("daily_summary.csv")
+
+metric_choices <- c(
+  "Total Sales"        = "total_sales",
+  "Number of Transactions" = "n_transactions",
+  "Average Price"      = "avg_price"
+)
+
+ui <- fluidPage(
+  titlePanel("H&M Sales by Channel: Online vs. In-Store"),
+
+  sidebarLayout(
+    sidebarPanel(
+      helpText("Explore how H&M's sales patterns differ between online and",
+               "in-store channels over time. Use the controls below to filter",
+               "the data and switch between metrics."),
+
+      dateRangeInput(
+        "date_range",
+        label = "Select Date Range:",
+        start = min(daily$t_dat),
+        end   = max(daily$t_dat),
+        min   = min(daily$t_dat),
+        max   = max(daily$t_dat)
+      ),
+
+      selectInput(
+        "metric",
+        label = "Select Metric to Display:",
+        choices = metric_choices,
+        selected = "total_sales"
+      ),
+
+      checkboxGroupInput(
+        "channels",
+        label = "Select Channels:",
+        choices = c("Online", "In-Store"),
+        selected = c("Online", "In-Store")
+      ),
+
+      width = 3
+    ),
+
+    mainPanel(
+      h4("Trend Over Time"),
+      plotOutput("trend_plot", height = "350px"),
+      br(),
+      h4("Channel Summary (for selected period)"),
+      tableOutput("summary_table"),
+      width = 9
+    )
+  )
+)
+
+server <- function(input, output) {
+
+  filtered_data <- reactive({
+    daily |>
+      filter(
+        t_dat >= input$date_range[1],
+        t_dat <= input$date_range[2],
+        channel %in% input$channels
+      )
+  })
+
+  metric_label <- reactive({
+    names(metric_choices)[metric_choices == input$metric]
+  })
+
+  output$trend_plot <- renderPlot({
+    df <- filtered_data()
+    ggplot(df, aes(x = t_dat, y = .data[[input$metric]], color = channel)) +
+      geom_line(linewidth = 0.7, alpha = 0.85) +
+      scale_color_manual(values = c("Online" = "#E50010", "In-Store" = "#222222")) +
+      scale_y_continuous(labels = comma) +
+      labs(x = "Date", y = metric_label(), color = "Channel",
+           title = paste(metric_label(), "Over Time by Channel")) +
+      theme_minimal(base_size = 15) +
+      theme(legend.position = "top")
+  })
+
+  output$summary_table <- renderTable({
+    filtered_data() |>
+      group_by(Channel = channel) |>
+      summarise(
+        `Total Sales` = comma(sum(total_sales), accuracy = 1),
+        `Total Transactions` = comma(sum(n_transactions)),
+        `Avg Price` = dollar(mean(avg_price), accuracy = 0.001),
+        .groups = "drop"
+      )
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+## Key Findings from the Data
+
+- **In-Store consistently generates higher total sales** than Online across most of the time period.
+
+- **Online often shows competitive transaction volume** even when its total sales are lower, suggesting different basket sizes or price points between channels.
+
+## Interactive App
+
+*[TODO: Paste your clickable Shiny app URL here after deploying to shinyapps.io.]*
+
+[H&M Sales Channel Explorer (Shiny App)](ADD-YOUR-SHINYAPPS-URL-HERE)
